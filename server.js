@@ -19,3 +19,8 @@ app.get('/', (req,res) => {
 // app.use('/api', rotasDeCep);
 
 // Configuração de porta
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT,() => {
+    console.log(`🚀 Servidor rodando na porta ${PORT}`);
+}); 
