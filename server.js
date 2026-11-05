@@ -1,7 +1,8 @@
 import express from 'express';
 import cors from 'cors';
 import 'dotenv/config'
-import cepRoutes from './routes/cep.js';
+
+import cepRoutes from './src/routes/cep.js';
 
 
 const app = express();
