@@ -1,34 +1,31 @@
 import express from 'express';
-import axios from 'axios';
+import { buscarEndereco } from '../services/viacep.js';
+import { cepValido } from '../utils/validarCep.js';
 
 const router = express.Router();
 
 // Consulta e validação de CEP
 router.get('/cep/:cep', async (req, res) => {
+    const { cep } = req.params;
+
+    // Validação de entrada: responsabilidade da rota
+    if (!cepValido(cep)) {
+        return res.status(400).json({
+            error: true,
+            mensagem: 'CEP inválido. O CEP deve conter exatamente 8 números.'
+        });
+    }
 
     try {
-        // Recebe o CEP enviado pela URL
-        const { cep } = req.params;
-
-        // Verifica se o EP possui exatamente 8 números
-        if (!/^\d{8}$/.test(cep)) {
-            return res.status(400).json({ error: true, mensagem:'CEP inválido. O CEP deve conter exatamente 8 números.' });
-        }
-
-        // Consulta o CEP na API ViaCEP
-        const resposta = await axios.get(`https://viacep.com.br/ws/${cep}/json/`);
-
-        // Verifica se o CEP exite
-        if (resposta.data.erro) {
-            return res.status(404).json({ error: true, mensagem: 'CEP não encontrado.' });
-        }
-
-        //Retorna os dados do endereço
-        return res.status(200).json(resposta.data);
+        const endereco = await buscarEndereco(cep);
+        return res.status(200).json(endereco);
     } catch (error) {
-        console.error('Erro ao consultar o cep:', error.mensagem);
+        const status = error.statusCode || 500;
+        const mensagem = error.statusCode
+            ? error.message
+            : 'Erro interno no servidor.';
 
-        return res.status(502).json({ error: true, mensagem: 'Erro ao consultar o CEP. Tente novamente mais tarde.' });
+        return res.status(status).json({ error: true, mensagem });
     }
 });
 

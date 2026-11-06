@@ -1,6 +1,6 @@
 
 import 'dotenv/config';
-import { obterCoordenadas } from './services/MAPBOX.JS';
+import { obterCoordenadas } from './src/services/mapbox.js';
 
 const coordenadas = await obterCoordenadas(
     'Praça da Sé, São Paulo, SP, Brasil'

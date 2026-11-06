@@ -3,6 +3,7 @@ import cors from 'cors';
 import 'dotenv/config'
 
 import cepRoutes from './src/routes/cep.js';
+import distanciaRoutes from './src/routes/distancia.js';
 
 
 const app = express();
@@ -13,6 +14,7 @@ app.use(cors());
 app.use(express.json());
 
 app.use('/api', cepRoutes);
+app.use('/api', distanciaRoutes);
 
 //Rota de teste simples (health Check)
 
