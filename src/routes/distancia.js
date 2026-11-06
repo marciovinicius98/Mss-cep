@@ -1,6 +1,7 @@
 import express from 'express';
 import { buscarEndereco } from '../services/viacep.js';
 import { obterCoordenadas } from '../services/mapbox.js';
+import { obterRota } from '../services/matrix.js';
 import { calcularDistanciaLinhaReta } from '../services/distancia.js';
 import { cepValido } from '../utils/validarCep.js';
 
@@ -18,10 +19,14 @@ function montarEnderecoCompleto(endereco) {
 
 router.post('/distancia', async (req, res) => {
     try {
-        const { cepOrigem, cepDestino } = req.body ?? {};
+        const { cepOrigem, cepDestino, calcularRota } = req.body ?? {};
 
         if (!cepValido(cepOrigem) || !cepValido(cepDestino)) {
             throw erroHttp(400, "Os campos 'cepOrigem' e 'cepDestino' devem conter exatamente 8 números (como texto).");
+        }
+
+        if (calcularRota !== undefined && typeof calcularRota !== 'boolean') {
+            throw erroHttp(400, "O campo 'calcularRota' deve ser booleano (true ou false).");
         }
 
         if (cepOrigem === cepDestino) {
@@ -49,13 +54,26 @@ router.post('/distancia', async (req, res) => {
             coordenadasDestino.longitude
         );
 
-        return res.status(200).json({
+        const resposta = {
             cepOrigem,
             cepDestino,
             enderecoOrigem,
             enderecoDestino,
             distanciaLinhaRetaKm
-        });
+        };
+
+        if (calcularRota) {
+            const rota = await obterRota(coordenadasOrigem, coordenadasDestino);
+
+            if (!rota) {
+                throw erroHttp(422, 'Não foi possível calcular a rota entre os endereços.');
+            }
+
+            resposta.distanciaRotaKm = rota.distanciaKm;
+            resposta.duracaoEstimadaMin = rota.duracaoMin;
+        }
+
+        return res.status(200).json(resposta);
     } catch (error) {
         const status = error.statusCode || 500;
         const mensagem = error.statusCode
