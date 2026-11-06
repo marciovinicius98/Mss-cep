@@ -4,6 +4,7 @@ import 'dotenv/config'
 
 import cepRoutes from './src/routes/cep.js';
 import distanciaRoutes from './src/routes/distancia.js';
+import { rotaNaoEncontrada, tratarErro } from './src/middlewares/erros.js';
 
 
 const app = express();
@@ -24,6 +25,10 @@ app.get('/', (req,res) => {
 
 //Espaço reservado para as rotas modulares que criaremos depois
 // app.use('/api', rotasDeCep);
+
+// 404 em JSON e tratamento centralizado de erros (sempre por último)
+app.use(rotaNaoEncontrada);
+app.use(tratarErro);
 
 // Configuração de porta
 const PORT = process.env.PORT || 3000;
