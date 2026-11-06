@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Mss-CEP — Painel de distâncias</title>
+    <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+    <header class="topo">
+        <h1>Mss-CEP</h1>
+        <p>Valide CEPs e calcule a distância entre dois endereços</p>
+    </header>
+
+    <main class="conteudo">
+        <form id="form-distancia" class="cartao formulario">
+            <div class="campos">
+                <label>
+                    CEP de origem
+                    <input id="cepOrigem" name="cepOrigem" inputmode="numeric" placeholder="01001000" maxlength="8" required />
+                </label>
+                <label>
+                    CEP de destino
+                    <input id="cepDestino" name="cepDestino" inputmode="numeric" placeholder="01310930" maxlength="8" required />
+                </label>
+            </div>
+
+            <label class="check">
+                <input type="checkbox" id="calcularRota" />
+                Calcular rota (distância por vias e tempo estimado)
+            </label>
+
+            <div class="acoes">
+                <button type="submit" id="botao-calcular" class="primario">Calcular</button>
+                <button type="button" class="secundario" data-exemplo="01001000,01310930">Sé → Paulista</button>
+                <button type="button" class="secundario" data-exemplo="01001000,20040020">SP → RJ</button>
+            </div>
+        </form>
+
+        <p id="mensagem-erro" class="erro" role="alert" hidden></p>
+
+        <section id="resultado" aria-live="polite" hidden>
+            <div class="numeros">
+                <article class="destaque">
+                    <span class="rotulo">Linha reta</span>
+                    <strong id="valor-reta">—</strong>
+                    <span class="unidade">km</span>
+                </article>
+                <article class="destaque" id="card-rota" hidden>
+                    <span class="rotulo">Por rota</span>
+                    <strong id="valor-rota">—</strong>
+                    <span class="unidade">km</span>
+                </article>
+                <article class="destaque" id="card-duracao" hidden>
+                    <span class="rotulo">Tempo estimado</span>
+                    <strong id="valor-duracao">—</strong>
+                    <span class="unidade">min</span>
+                </article>
+            </div>
+
+            <div class="enderecos">
+                <article class="cartao endereco">
+                    <h2>Origem</h2>
+                    <dl id="endereco-origem"></dl>
+                </article>
+                <article class="cartao endereco">
+                    <h2>Destino</h2>
+                    <dl id="endereco-destino"></dl>
+                </article>
+            </div>
+        </section>
+    </main>
+
+    <footer class="rodape">
+        <code>GET /api/cep/:cep</code>
+        <code>POST /api/distancia</code>
+    </footer>
+
+    <script type="module" src="./app.js"></script>
+</body>
+</html>

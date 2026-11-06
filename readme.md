@@ -17,8 +17,7 @@ Microserviço em **Node.js + Express 5** que valida CEPs brasileiros pela **ViaC
 - [5. Variáveis de ambiente](#5-variáveis-de-ambiente)
 - [6. Como executar](#6-como-executar)
 - [7. Endpoints](#7-endpoints)
-- [8. Validações de entrada](#8-validações-de-entrada)
-- [9. Códigos de erro](#9-códigos-de-erro)
+- [8. Validações de entrada](#8-validações-de-entrada)- [9. Códigos de erro](#9-códigos-de-erro)
 - [10. Como as distâncias são calculadas](#10-como-as-distâncias-são-calculadas)
 - [11. Limitações conhecidas](#11-limitações-conhecidas)
 - [12. Testes manuais](#12-testes-manuais)
@@ -35,6 +34,7 @@ Microserviço em **Node.js + Express 5** que valida CEPs brasileiros pela **ViaC
 | Calcular distância em linha reta entre dois CEPs | `POST /api/distancia` |
 | Calcular distância por rota e duração estimada | `POST /api/distancia` com `"calcularRota": true` |
 | Verificar se o serviço está no ar | `GET /` |
+| Painel visual (HTML/CSS/JS, sem build) | `GET /app/` |
 
 ---
 
@@ -263,6 +263,28 @@ Exemplo de distância longa (São Paulo → Rio de Janeiro), útil como teste de
   "duracaoEstimadaMin": 368
 }
 ```
+
+---
+
+### 7.4. Painel visual — `GET /app/`
+
+Dashboard em **HTML/CSS/JS puro** (sem build, sem framework), servido pelo próprio Express a partir da pasta `public/`.
+
+Com o servidor rodando, abra `http://localhost:3001/app/`:
+
+- dois campos de CEP (aceita hífen na digitação, mas envia somente os dígitos);
+- caixa "Calcular rota", que envia `calcularRota: true`;
+- cards com distância em linha reta, distância por rota e tempo estimado;
+- cards com os dados de origem e destino;
+- erros da API (400/404/422/502) exibidos na tela com a mensagem devolvida pelo servidor.
+
+| Arquivo | Papel |
+| --- | --- |
+| `public/index.html` | estrutura da tela |
+| `public/styles.css` | estilos, incluindo tema escuro automático (`prefers-color-scheme`) |
+| `public/app.js` | chamadas `fetch` à API e atualização do DOM |
+
+Servido por `app.use('/app', express.static(...))` em [server.js](server.js); o health check continua em `/`.
 
 ---
 
