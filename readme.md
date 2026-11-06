@@ -1,6 +1,6 @@
-# Mss-CEP — Microserviço de Consulta e Distância entre CEPs
+# Mss-CEP — Microserviço de CEP e distância
 
-Microserviço em **Node.js** que consulta, valida e calcula distâncias entre CEPs brasileiros, integrando a **ViaCEP** (dados de endereço) e a **Mapbox** (geocodificação e rotas).
+Microserviço em **Node.js + Express 5** que valida CEPs brasileiros pela **ViaCEP** e calcula a distância entre dois CEPs em **linha reta** (fórmula de Haversine) e, opcionalmente, **por rota** com duração estimada (**Mapbox Matrix API**).
 
 ![Node.js](https://img.shields.io/badge/Node.js-18%2B-339933?logo=node.js&logoColor=white)
 ![Express](https://img.shields.io/badge/Express-5.x-000000?logo=express&logoColor=white)
@@ -10,204 +10,180 @@ Microserviço em **Node.js** que consulta, valida e calcula distâncias entre CE
 
 ## Índice
 
-- [1. Objetivo do projeto](#1-objetivo-do-projeto)
-- [2. Stack e dependências](#2-stack-e-dependências)
+- [1. O que a API faz](#1-o-que-a-api-faz)
+- [2. Stack](#2-stack)
 - [3. Arquitetura](#3-arquitetura)
 - [4. Instalação](#4-instalação)
 - [5. Variáveis de ambiente](#5-variáveis-de-ambiente)
 - [6. Como executar](#6-como-executar)
-- [7. Endpoints da aplicação](#7-endpoints-da-aplicação)
-- [8. Modos de utilização](#8-modos-de-utilização)
-- [9. Cálculo de distância (Haversine)](#9-cálculo-de-distância-haversine)
-- [10. Integração com a Mapbox](#10-integração-com-a-mapbox)
-- [11. Tratamento de erros](#11-tratamento-de-erros)
-- [12. Plano de implementação](#12-plano-de-implementação)
-- [13. Testes](#13-testes)
-- [14. Boas práticas adotadas](#14-boas-práticas-adotadas)
+- [7. Endpoints](#7-endpoints)
+- [8. Validações de entrada](#8-validações-de-entrada)
+- [9. Códigos de erro](#9-códigos-de-erro)
+- [10. Como as distâncias são calculadas](#10-como-as-distâncias-são-calculadas)
+- [11. Limitações conhecidas](#11-limitações-conhecidas)
+- [12. Testes manuais](#12-testes-manuais)
+- [13. Responsabilidades por camada](#13-responsabilidades-por-camada)
+- [14. Próximos passos](#14-próximos-passos)
 
 ---
 
-## 1. Objetivo do projeto
+## 1. O que a API faz
 
-Desenvolver um microserviço em Node.js capaz de consultar, validar e calcular distâncias entre CEPs brasileiros, utilizando APIs externas.
-
-O sistema trabalha com duas integrações principais:
-
-| API | Finalidade |
+| Funcionalidade | Endpoint |
 | --- | --- |
-| **ViaCEP** | Consulta de informações de endereços brasileiros |
-| **Mapbox** | Geocodificação e cálculo de distância/tempo de deslocamento |
-
-O projeto permite:
-
-- Consultar **um único CEP** e obter os dados do endereço;
-- Informar **dois CEPs** e receber os dados dos endereços, a distância em linha reta (Haversine) e, opcionalmente, a distância por rota e o tempo estimado.
+| Validar um CEP e devolver o endereço | `GET /api/cep/:cep` |
+| Calcular distância em linha reta entre dois CEPs | `POST /api/distancia` |
+| Calcular distância por rota e duração estimada | `POST /api/distancia` com `"calcularRota": true` |
+| Verificar se o serviço está no ar | `GET /` |
 
 ---
 
-## 2. Stack e dependências
+## 2. Stack
 
-| Pacote | Versão | Uso |
-| --- | --- | --- |
-| `express` | ^5.3.0 | Servidor HTTP e roteamento |
-| `axios` | ^1.21.0 | Cliente HTTP para ViaCEP e Mapbox |
-| `cors` | ^2.8.6 | Liberação de origem para consumo do front-end |
-| `dotenv` | ^18.0.9 | Leitura das variáveis de ambiente |
-| `nodemon` | ^3.1.14 | *dev* — reload automático |
+| Pacote | Uso |
+| --- | --- |
+| `express` 5.x | Servidor HTTP e roteamento |
+| `axios` | Cliente HTTP para ViaCEP e Mapbox |
+| `cors` | Liberação de origem para consumo por front-end |
+| `dotenv` | Leitura das variáveis de ambiente |
+| `nodemon` (*dev*) | Reinício automático durante o desenvolvimento |
 
-O projeto usa **ES Modules** (`"type": "module"` no `package.json`), portanto todos os arquivos utilizam `import` / `export`.
+O projeto usa **ES Modules** (`"type": "module"` no `package.json`): todos os arquivos usam `import` / `export`.
 
 ---
 
 ## 3. Arquitetura
 
-Separação de responsabilidades entre **rotas**, **controladores** e **serviços**:
+Separação em três camadas, com uma regra simples: **services e utils não conhecem HTTP** (não recebem `req`/`res`) e **rotas não conhecem as APIs externas**.
 
 ```mermaid
 graph TD
-    A[Cliente] -->|GET /api/cep/:cep| B[rotas/cepRoutes]
-    A -->|POST /api/distancia| B
-    B --> C[controllers/cepController]
-    C --> D[services/viacepService]
-    C --> E[services/geocodingService]
-    C --> F[services/haversine]
-    C --> G[services/matrixService]
-    D -->|HTTPS| H[(ViaCEP API)]
+    A[Cliente] -->|GET /api/cep/:cep| B[src/routes/cep.js]
+    A -->|POST /api/distancia| C[src/routes/distancia.js]
+    B --> D[services/viacep.js]
+    C --> D
+    C --> E[services/mapbox.js]
+    C --> F[services/matrix.js]
+    C --> G[services/distancia.js - Haversine]
+    D -->|HTTPS| H[(ViaCEP)]
     E -->|HTTPS| I[(Mapbox Geocoding)]
-    G -->|HTTPS| J[(Mapbox Matrix)]
+    F -->|HTTPS| J[(Mapbox Matrix)]
+    B -.erros.-> K[middlewares/erros.js]
+    C -.erros.-> K
 ```
 
 ### 3.1. Estrutura de pastas
 
 ```
 Mss-cep/
-├── server.js                    # Bootstrap: middlewares, rotas e listen
+├── server.js                    # Bootstrap: middlewares, rotas, 404, tratador de erros, listen
 ├── package.json
-├── .env                         # credenciais reais (NÃO versionar)
-├── .env.example                 # modelo de variáveis
+├── .env                         # variáveis reais (NÃO versionado)
+├── .env.example                 # modelo versionado, sem segredos
 ├── .gitignore
 └── src/
+    ├── middlewares/
+    │   └── erros.js             # rota não encontrada (404) + tratador de erros central
     ├── routes/
-    │   └── cepRoutes.js         # definição das rotas /api
-    ├── controllers/
-    │   └── cepController.js     # orquestração das requisições
+    │   ├── cep.js               # GET /api/cep/:cep
+    │   └── distancia.js         # POST /api/distancia
     ├── services/
-    │   ├── viacepService.js     # consulta de endereço
-    │   ├── geocodingService.js  # endereço -> lat/lon
-    │   ├── matrixService.js     # distância/duração por rota
-    │   └── haversine.js         # distância em linha reta
+    │   ├── viacep.js            # CEP -> endereço
+    │   ├── mapbox.js            # endereço -> latitude/longitude
+    │   ├── matrix.js            # coordenadas -> distância e duração de rota
+    │   └── distancia.js         # Haversine (cálculo puro, sem rede)
     └── utils/
-        ├── validarCep.js        # validação/normalização do CEP
-        └── httpError.js         # erro padronizado com statusCode
+        ├── validarCep.js        # cepValido(cep)
+        └── erroHttp.js          # erroHttp(statusCode, mensagem)
 ```
 
-### 3.2. Responsabilidades
+### 3.2. Fluxo do `POST /api/distancia`
 
-- **Rotas:** apenas mapeiam método + caminho para um controlador.
-- **Controladores:** validam entrada, chamam serviços e montam a resposta JSON.
-- **Serviços:** concentram integrações externas e cálculos puros, sem conhecer `req`/`res`.
-- **Utils:** funções reutilizáveis (validação de CEP, classe de erro HTTP).
+1. Valida formato dos dois CEPs (`400` se inválido) — **antes** de qualquer chamada externa.
+2. Consulta os dois CEPs na ViaCEP **em paralelo** (`Promise.all`).
+3. Geocodifica os dois endereços na Mapbox **em paralelo**.
+4. Calcula a distância em linha reta (Haversine, sem rede).
+5. Se `calcularRota === true`, consulta a Matrix API e adiciona `distanciaRotaKm` e `duracaoEstimadaMin`.
+6. Erros sobem para o middleware central, que responde JSON com o status adequado.
 
 ---
 
 ## 4. Instalação
 
 ```bash
-# 1. Clone o repositório
 git clone <url-do-repositorio>
 cd Mss-cep
-
-# 2. Instale as dependências
 npm install
-
-# 3. Crie o arquivo de variáveis de ambiente
 cp .env.example .env    # Windows: copy .env.example .env
-
-# 4. Preencha o MAPBOX_ACCESS_TOKEN no .env
 ```
 
-**Pré-requisitos:** Node.js 18 ou superior (suporte nativo a `fetch` e ao `--watch`).
+Depois preencha `MAPBOX_TOKEN` no `.env` (veja a seção 5).
+
+**Pré-requisitos:** Node.js 18 ou superior (o projeto usa ES Modules e o Express 5, que encaminha erros de handlers `async` automaticamente).
 
 ---
 
 ## 5. Variáveis de ambiente
 
-A chave da Mapbox **nunca** deve ficar no código-fonte.
+O token da Mapbox **nunca** deve ser commitado.
 
-`.env`
-
-```env
-PORT=3000
-MAPBOX_ACCESS_TOKEN=SEU_TOKEN_AQUI
-```
-
-`.env.example` (versionado, sem segredo real)
+`.env` (não versionado):
 
 ```env
-PORT=3000
-MAPBOX_ACCESS_TOKEN=
+PORT=3001
+MAPBOX_TOKEN=seu_token_aqui
 ```
 
-`.gitignore`
+`.env.example` (versionado):
 
-```gitignore
-node_modules/
-.env
+```env
+PORT=3001
+MAPBOX_TOKEN=
 ```
 
-> ⚠️ O arquivo `.env` já está listado no `.gitignore`. Nunca comite tokens — se um token vazar, revogue-o no painel da Mapbox e gere outro.
+| Variável | Obrigatória | Descrição |
+| --- | --- | --- |
+| `PORT` | não | Porta HTTP. Padrão do código: `3000`. O `.env.example` sugere `3001` para não conflitar com outros projetos locais |
+| `MAPBOX_TOKEN` | **sim** | Token de acesso da Mapbox, usado na geocodificação e na Matrix API |
+
+> A ViaCEP não exige autenticação.
 
 ---
 
 ## 6. Como executar
 
 ```bash
-# desenvolvimento (reload automático)
-npm run dev
-
-# produção
-node server.js
+npm run dev      # desenvolvimento, com reinício automático (nodemon)
+npm start        # produção
 ```
 
-Saída esperada:
+Saída esperada no console:
 
 ```
-🚀 Servidor rodando na porta 3000
+🚀 Servidor rodando na porta 3001
 ```
 
-Health check:
-
-```bash
-curl http://localhost:3000/
-```
-
-```json
-{
-  "status": "ok",
-  "mensagem": "Microserviço Mss-CEP operante!"
-}
-```
+> **Atenção:** a porta vem do `PORT` no `.env`. Confira a mensagem do console antes de testar — usar a porta errada gera `HTTP 000` (conexão recusada), que parece erro de código mas é apenas endereço incorreto.
 
 ---
 
-## 7. Endpoints da aplicação
+## 7. Endpoints
 
-### 7.1. Consultar e validar um CEP
+### 7.1. `GET /` — health check
 
-**Método:** `GET`
-**Rota:** `/api/cep/:cep`
-
-| Parâmetro | Tipo | Descrição |
-| --- | --- | --- |
-| `cep` | path | 8 dígitos, com ou sem hífen |
-
-**Requisição**
-
-```bash
-curl http://localhost:3000/api/cep/01001000
+```json
+{ "status": "ok", "mensagem": "Microserviço Mss-CEP operante!" }
 ```
 
-**Resposta — `200 OK`**
+### 7.2. `GET /api/cep/:cep` — validar um CEP
+
+`cep` deve conter exatamente 8 dígitos (somente números; hífen e pontos não são aceitos).
+
+```bash
+curl http://localhost:3001/api/cep/01001000
+```
+
+`200 OK`
 
 ```json
 {
@@ -220,48 +196,27 @@ curl http://localhost:3000/api/cep/01001000
 }
 ```
 
-**Resposta — `404 Not Found`**
+A resposta traz **apenas os campos do contrato** — os dados extras da ViaCEP (`ibge`, `ddd`, `gia`, `siafi`, `regiao`) são descartados no service.
 
-```json
-{
-  "erro": true,
-  "mensagem": "CEP não encontrado."
-}
-```
+### 7.3. `POST /api/distancia` — distância entre dois CEPs
 
----
-
-### 7.2. Calcular distância entre dois CEPs
-
-**Método:** `POST`
-**Rota:** `/api/distancia`
-
-**Corpo da requisição**
-
-| Campo | Tipo | Obrigatório | Descrição |
-| --- | --- | --- | --- |
-| `cepOrigem` | string | sim | CEP de origem (8 dígitos) |
-| `cepDestino` | string | sim | CEP de destino (8 dígitos) |
-| `calcularRota` | boolean | não | Se `true`, consulta a Mapbox Matrix API |
+Corpo da requisição:
 
 ```json
 {
   "cepOrigem": "01001000",
   "cepDestino": "01310930",
-  "calcularRota": true
+  "calcularRota": false
 }
 ```
 
-**Fluxo executado**
+| Campo | Tipo | Obrigatório | Descrição |
+| --- | --- | --- | --- |
+| `cepOrigem` | string | sim | 8 dígitos |
+| `cepDestino` | string | sim | 8 dígitos, diferente de `cepOrigem` |
+| `calcularRota` | boolean | não | `true` adiciona distância por rota e duração estimada |
 
-1. Valida os dois CEPs;
-2. Consulta os endereços na ViaCEP;
-3. Obtém as coordenadas geográficas dos endereços;
-4. Calcula a distância em linha reta (Haversine);
-5. Se `calcularRota` for `true`, consulta a Mapbox Matrix API;
-6. Retorna os dois endereços e os resultados dos cálculos.
-
-**Resposta — `200 OK`**
+`200 OK` — apenas linha reta:
 
 ```json
 {
@@ -283,236 +238,157 @@ curl http://localhost:3000/api/cep/01001000
     "localidade": "São Paulo",
     "uf": "SP"
   },
+  "distanciaLinhaRetaKm": 2.52
+}
+```
+
+`200 OK` — com `"calcularRota": true`:
+
+```json
+{
   "distanciaLinhaRetaKm": 2.52,
   "distanciaRotaKm": 3.32,
   "duracaoEstimadaMin": 11
 }
 ```
 
-> Os valores de distância e duração acima são **ilustrativos**.
-> Quando `calcularRota` for `false` (ou omitido), `distanciaRotaKm` e `duracaoEstimadaMin` retornam `null`.
+(Os demais campos de endereço continuam presentes; o trecho acima mostra só os numéricos.)
 
----
-
-## 8. Modos de utilização
-
-### Modo 1 — Apenas um CEP
-
-Quando o usuário informar apenas um CEP, o sistema realiza a consulta na ViaCEP e retorna os dados do endereço.
-
-```bash
-curl http://localhost:3000/api/cep/01310930
-```
-
-### Modo 2 — Dois CEPs
-
-Quando o usuário informar dois CEPs, o sistema:
-
-- Valida os dois CEPs;
-- Consulta os dois endereços;
-- Obtém as coordenadas geográficas;
-- Calcula a distância em linha reta;
-- Calcula a distância por rota caso `calcularRota` esteja habilitado.
-
----
-
-## 9. Cálculo de distância (Haversine)
-
-A distância em linha reta é calculada nativamente em Node.js, sem dependências externas, usando a **fórmula de Haversine** — que considera a curvatura da Terra (modelo esférico).
-
-$$
-d = 2R \cdot \arcsin\left(\sqrt{\sin^2\!\left(\frac{\Delta\varphi}{2}\right) + \cos\varphi_1 \cdot \cos\varphi_2 \cdot \sin^2\!\left(\frac{\Delta\lambda}{2}\right)}\right)
-$$
-
-Onde:
-
-| Símbolo | Significado |
-| --- | --- |
-| $\varphi_1, \varphi_2$ | Latitudes dos pontos 1 e 2 (em radianos) |
-| $\Delta\varphi$ | Diferença de latitude |
-| $\Delta\lambda$ | Diferença de longitude |
-| $R$ | Raio da Terra (≈ 6.371 km) |
-
-O resultado é arredondado para **2 casas decimais**, expresso em quilômetros.
-
-```js
-// src/services/haversine.js
-const RAIO_TERRA_KM = 6371;
-
-const toRad = (graus) => (graus * Math.PI) / 180;
-
-export function calcularDistanciaHaversine(pontoA, pontoB) {
-  const dLat = toRad(pontoB.lat - pontoA.lat);
-  const dLon = toRad(pontoB.lon - pontoA.lon);
-  const lat1 = toRad(pontoA.lat);
-  const lat2 = toRad(pontoB.lat);
-
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
-
-  const c = 2 * Math.asin(Math.sqrt(a));
-
-  return Number((RAIO_TERRA_KM * c).toFixed(2));
-}
-```
-
----
-
-## 10. Integração com a Mapbox
-
-### 10.1. Geocoding API
-
-Converte o endereço retornado pela ViaCEP em **latitude/longitude**:
-
-```
-GET https://api.mapbox.com/geocoding/v5/mapbox.places/{endereco}.json
-    ?access_token=TOKEN
-    &country=br
-    &limit=1
-```
-
-O endereço é montado a partir dos campos da ViaCEP, por exemplo:
-`Praça da Sé, Sé, São Paulo, SP, 01001-000, Brasil`
-
-### 10.2. Matrix API
-
-Calcula a distância e a duração entre as coordenadas obtidas:
-
-```
-GET https://api.mapbox.com/directions-matrix/v1/mapbox/driving/{lon1},{lat1};{lon2},{lat2}
-    ?access_token=TOKEN
-    &annotations=distance,duration
-```
-
-> ⚠️ A Matrix API recebe sempre **longitude,latitude** (nessa ordem).
-
-**Regras do projeto**
-
-- Perfil padrão: `mapbox/driving` — deslocamento **de carro**.
-- O resultado **não** representa uma rota específica para motocicletas.
-- A integração é **opcional**, controlada pela propriedade `calcularRota`.
-- Conversões aplicadas na resposta:
-  - `distance` (metros) → `distanciaRotaKm` (km, 2 casas decimais);
-  - `duration` (segundos) → `duracaoEstimadaMin` (minutos, arredondado).
-
----
-
-## 11. Tratamento de erros
-
-Todas as respostas de erro seguem o mesmo formato JSON:
+Exemplo de distância longa (São Paulo → Rio de Janeiro), útil como teste de sanidade — a rota deve ser **maior** que a linha reta:
 
 ```json
 {
-  "erro": true,
-  "mensagem": "Descrição legível do problema."
+  "distanciaLinhaRetaKm": 360.52,
+  "distanciaRotaKm": 443.91,
+  "duracaoEstimadaMin": 368
 }
 ```
 
-| Situação | HTTP | Mensagem |
-| --- | --- | --- |
-| CEP com formato inválido | `400` | "CEP inválido. Informe 8 dígitos." |
-| Dados obrigatórios não informados | `400` | "Informe cepOrigem e cepDestino." |
-| CEP não encontrado na ViaCEP | `404` | "CEP não encontrado." |
-| CEP de origem ou destino inexistente | `404` | "CEP de origem não encontrado." |
-| Endereço sem coordenadas disponíveis | `422` | "Não foi possível obter as coordenadas do endereço." |
-| Impossibilidade de encontrar rota | `422` | "Não foi possível calcular a rota entre os pontos." |
-| Token da Mapbox ausente ou inválido | `500` / `502` | "Token da Mapbox ausente ou inválido." |
-| Falha na comunicação com a ViaCEP | `502` | "Serviço ViaCEP indisponível." |
-| Falha na comunicação com a Mapbox | `502` | "Serviço Mapbox indisponível." |
-| Erro inesperado | `500` | "Erro interno no servidor." |
+---
 
-**Diretrizes**
+## 8. Validações de entrada
 
-- Erros previstos usam uma classe `HttpError` com `statusCode` + `mensagem`;
-- Um middleware final captura tudo e padroniza a resposta;
-- Nunca retornar *stack trace* ou detalhes internos ao cliente;
-- Logs internos (`console.error`) preservam o erro original para diagnóstico.
+| Regra | Falha |
+| --- | --- |
+| CEP com exatamente 8 dígitos | `400` |
+| CEP enviado como **texto**, não número | `400` |
+| `calcularRota`, se presente, precisa ser booleano | `400` |
+| `cepOrigem` e `cepDestino` diferentes | `400` |
+| Corpo ausente ou sem `Content-Type: application/json` | `400` |
+
+CEP é **identificador**, não quantidade: enviado como número, `01310930` perde o zero à esquerda e chega como `1310930`. Por isso o tipo é validado.
 
 ---
 
-## 12. Plano de implementação
+## 9. Códigos de erro
 
-Desenvolvimento **incremental**, sem comprometer o funcionamento atual do microserviço.
+Formato padrão de erro:
 
-**Antes de implementar**
-
-1. Analisar a estrutura atual do projeto;
-2. Identificar as rotas e funcionalidades já existentes;
-3. Verificar as dependências instaladas;
-4. Apresentar um plano de implementação.
-
-**Etapas**
-
-| # | Etapa | Entregável |
-| --- | --- | --- |
-| 1 | Validação e consulta de CEP | `validarCep` + `viacepService` + `GET /api/cep/:cep` |
-| 2 | Coordenadas geográficas | `geocodingService` (Mapbox Geocoding) |
-| 3 | Distância em linha reta | `haversine.js` |
-| 4 | Rota e duração | `matrixService` + `POST /api/distancia` |
-| 5 | Tratamento de erros | `httpError` + middleware global |
-| 6 | Testes dos endpoints | Coleção de requisições / testes manuais |
-
-> **Importante:** não modificar arquivos existentes sem necessidade e não implementar todas as funcionalidades de uma só vez. Priorizar uma implementação organizada, didática e funcional.
-
----
-
-## 13. Testes
-
-Exemplos rápidos com `curl`:
-
-```bash
-# 1. Health check
-curl http://localhost:3000/
-
-# 2. Um CEP (válido)
-curl http://localhost:3000/api/cep/01001000
-
-# 3. CEP com hífen
-curl http://localhost:3000/api/cep/01001-000
-
-# 4. CEP inválido (espera 400)
-curl http://localhost:3000/api/cep/123
-
-# 5. Distância — apenas linha reta
-curl -X POST http://localhost:3000/api/distancia \
-  -H "Content-Type: application/json" \
-  -d '{"cepOrigem":"01001000","cepDestino":"01310930"}'
-
-# 6. Distância — com rota Mapbox
-curl -X POST http://localhost:3000/api/distancia \
-  -H "Content-Type: application/json" \
-  -d '{"cepOrigem":"01001000","cepDestino":"01310930","calcularRota":true}'
+```json
+{ "error": true, "mensagem": "CEP não encontrado." }
 ```
 
-**Checklist de validação**
+| Status | Significado | Quando acontece |
+| --- | --- | --- |
+| `400 Bad Request` | requisição inválida | formato de CEP, `calcularRota` não booleano, CEPs iguais, corpo ausente |
+| `404 Not Found` | recurso inexistente | CEP não existe na base da ViaCEP; rota HTTP inexistente |
+| `422 Unprocessable Entity` | requisição válida, conteúdo impossível | endereço existe no ViaCEP mas não foi localizado pelo geocodificador; Matrix sem rota entre os pontos |
+| `502 Bad Gateway` | falha em serviço externo | ViaCEP ou Mapbox indisponível, resposta inesperada ou timeout (5 s) |
+| `500 Internal Server Error` | erro inesperado no serviço | bug não previsto — a mensagem devolvida é genérica de propósito, para não expor detalhes internos |
 
-- [ ] CEP com 8 dígitos, com e sem hífen
-- [ ] CEP inexistente → `404`
-- [ ] Corpo sem `cepOrigem`/`cepDestino` → `400`
-- [ ] `calcularRota: false` → `distanciaRotaKm` e `duracaoEstimadaMin` = `null`
-- [ ] `calcularRota: true` com token ausente → erro tratado
-- [ ] ViaCEP fora do ar → `502`
-- [ ] Respostas sempre em JSON
-
----
-
-## 14. Boas práticas adotadas
-
-- ✅ Node.js + ES Modules
-- ✅ `async/await` em todas as chamadas externas
-- ✅ Arquitetura em camadas (rotas → controladores → serviços)
-- ✅ Fórmula de Haversine implementada nativamente
-- ✅ Reutilização das dependências existentes (`express`, `axios`, `cors`, `dotenv`)
-- ✅ Nenhum token exposto no código-fonte
-- ✅ Respostas JSON padronizadas
-- ✅ Tratamento de erros centralizado
-- ✅ Sem duplicação de código
+Todas as chamadas externas têm **timeout de 5 segundos**; sem isso, uma API lenta deixaria a requisição pendurada indefinidamente.
 
 ---
 
-## Documentação das APIs
+## 10. Como as distâncias são calculadas
 
-- **ViaCEP** — <https://viacep.com.br/>
-- **Mapbox Matrix API** — <https://docs.mapbox.com/api/navigation/matrix/>
-- **Mapbox Geocoding API** — <https://docs.mapbox.com/api/search/geocoding/>
+### 10.1. Linha reta — Haversine ([src/services/distancia.js](src/services/distancia.js))
+
+```js
+a = sin²(Δφ/2) + cos φ₁ · cos φ₂ · sin²(Δλ/2)
+d = 2 · R · atan2(√a, √(1−a))
+```
+
+- `φ` são latitudes e `λ` longitudes, **convertidas para radianos**.
+- `R = 6371 km` (raio médio da Terra) — é o que define a unidade do resultado.
+- Resultado arredondado para 2 casas e convertido de string para número (`Number(x.toFixed(2))`).
+
+Usa-se `atan2` em vez de `acos` porque a versão com `acos` pode receber `1.0000000000000002` por arredondamento de ponto flutuante e devolver `NaN` — justamente quando os dois pontos estão muito próximos. É a forma numericamente estável.
+
+### 10.2. Rota e duração — Mapbox Matrix API ([src/services/matrix.js](src/services/matrix.js))
+
+```
+GET https://api.mapbox.com/directions-matrix/v1/mapbox/driving/{lon,lat};{lon,lat}
+    ?annotations=distance,duration&access_token=...
+```
+
+- Coordenadas em **`longitude,latitude`** (nessa ordem).
+- `durations` em **segundos**, `distances` em **metros** — o service converte para km e minutos.
+- `distances[0][1]` é o trajeto origem → destino.
+- Sem rota possível, o elemento vem `null` e a API responde `422`.
+- Perfil usado: **`mapbox/driving`** (carro).
+
+---
+
+## 11. Limitações conhecidas
+
+1. **Não há perfil de moto.** A Mapbox oferece apenas `driving`, `driving-traffic`, `walking` e `cycling`. Para moto, o resultado disponível é o de carro (`driving`), sem estimativa específica.
+2. **CEP só é aceito com 8 dígitos**, sem máscara (`01001-000` é rejeitado com `400`).
+3. **Geocodificação aproximada.** A Mapbox recebe `logradouro, bairro, cidade - UF, Brasil`. Sem número do imóvel, as coordenadas são do trecho do logradouro — distâncias curtas podem variar dezenas de metros.
+4. **CEPs de município inteiro** (sem logradouro) não são geocodificáveis por esse método e resultam em `422`.
+5. **Sem autenticação, rate limit ou cache** nesta versão — adequado para estudo e uso interno, não para exposição pública.
+6. **Dependência de duas APIs de terceiros**, com cotas próprias. A chave usada é o token **público** da Mapbox, restrito por URL quando configurado no painel da Mapbox.
+
+---
+
+## 12. Testes manuais
+
+Com o servidor no ar (ajuste a porta conforme o seu `.env`):
+
+```powershell
+# 1 CEP válido
+curl.exe -s -w '\nHTTP %{http_code}\n' http://localhost:3001/api/cep/01001000
+
+# CEP inexistente -> 404
+curl.exe -s -w '\nHTTP %{http_code}\n' http://localhost:3001/api/cep/99999999
+
+# Formato inválido -> 400
+curl.exe -s -w '\nHTTP %{http_code}\n' http://localhost:3001/api/cep/123
+
+# Rota inexistente -> 404 em JSON
+curl.exe -s -w '\nHTTP %{http_code}\n' http://localhost:3001/api/rota-que-nao-existe
+```
+
+```powershell
+$body = @{ cepOrigem = '01001000'; cepDestino = '01310930'; calcularRota = $true } | ConvertTo-Json
+Invoke-RestMethod -Uri http://localhost:3001/api/distancia -Method Post -ContentType 'application/json' -Body $body | ConvertTo-Json -Depth 5
+```
+
+---
+
+## 13. Responsabilidades por camada
+
+| Camada | Responsabilidade | Conhece `req`/`res`? | Conhece APIs externas? |
+| --- | --- | --- | --- |
+| `routes/` | Ler entrada, validar, chamar services, escolher status HTTP | sim | não |
+| `services/` | Integrações externas e cálculos; **lança** erros com `statusCode` | não | sim |
+| `utils/` | Funções puras reutilizáveis | não | não |
+| `middlewares/` | Traduzir erro em resposta JSON padronizada; 404 | sim | não |
+
+Consequências práticas dessa separação:
+
+- trocar a ViaCEP por outro provedor exige mudar **um** arquivo;
+- qualquer rota pode reutilizar `buscarEndereco` (o `POST` chama duas vezes por requisição);
+- services podem ser testados com `node -e` ou testes unitários, sem subir servidor.
+
+---
+
+## 14. Próximos passos
+
+Itens **não** implementados nesta versão, em ordem sugerida:
+
+1. Testes automatizados com o runner nativo (`node --test`) para `calcularDistanciaLinhaReta`, `cepValido` e as rotas.
+2. Cache de CEPs e de coordenadas (dados de endereço mudam pouco) para reduzir latência e consumo de cota.
+3. Rate limiting e autenticação por API key antes de expor o serviço publicamente.
+4. Normalização de CEP com máscara (`01001-000` → `01001000`).
+5. Fallback de geocodificação quando o logradouro não for encontrado (ex.: geocodificar apenas `localidade/uf`).
